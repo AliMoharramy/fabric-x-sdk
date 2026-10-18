@@ -53,18 +53,17 @@ type TxParser interface {
 func Start(ctx context.Context, namespace, networkType string, cfg Config, db1 blocks.RecordGetter) (*Network, error) {
 	logger := sdk.NewStdLogger("fabrictest")
 
-	// in memory world state db
-	db, err := state.NewWriteDB("mychannel", ":memory:")
-	if err != nil {
-		return nil, err
-	}
-
-	var rg blocks.RecordGetter
-	// by default, read MVCC conflicts from our own DB, against its latest committed state
-	rg = db.CurrentRecordGetter()
-	if db1 != nil {
-		// if we're given an external database from which we can read MVCC conflicts, use that
-		rg = db1
+	// Read MVCC conflicts from db1 if provided (read-only).
+	// If not, create our own in-memory state db.
+	var db *state.VersionedDB
+	rg := db1
+	if db1 == nil {
+		var err error
+		db, err = state.NewWriteDB("mychannel", ":memory:")
+		if err != nil {
+			return nil, err
+		}
+		rg = db.CurrentRecordGetter()
 	}
 
 	// some specifics for either fabric or fabric-x
@@ -150,6 +149,15 @@ func listen(port int) (net.Listener, int, error) {
 // CutBlock cuts a new block with no transactions, advancing block height by one.
 func (n *Network) CutBlock(ctx context.Context) error {
 	return n.orderer.cutBlock(ctx)
+}
+
+// Revert truncates the chain so num is the last block; the next block cut takes
+// number num+1. Pending transactions not yet in a block are dropped. Open Deliver
+// streams continue with the new block num+1, so consumers must rewind their own
+// state to num. Requires db1 passed to Start, since fabrictest's own world state
+// cannot be rewound.
+func (n *Network) Revert(ctx context.Context, num uint64) error {
+	return n.orderer.revert(ctx, num)
 }
 
 // Stop gracefully shuts down the orderer and peer gRPC servers.

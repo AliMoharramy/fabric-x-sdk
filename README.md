@@ -14,7 +14,7 @@ This preview version can be used for testing and prototypes. It does not provide
 
 | Tool   | Version | Install                              |
 | ------ | ------- | ------------------------------------ |
-| Go     | 1.26.8+   | <https://go.dev/dl>                  |
+| Go     | 1.26.8+ | <https://go.dev/dl>                  |
 | Docker | 20.x+   | <https://docs.docker.com/get-docker> |
 
 ## Getting started

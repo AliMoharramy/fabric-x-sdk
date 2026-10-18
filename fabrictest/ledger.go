@@ -10,6 +10,8 @@ package fabrictest
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/hyperledger/fabric-protos-go-apiv2/common"
@@ -28,7 +30,7 @@ type ledger struct {
 	mu        sync.Mutex
 	blocks    []*common.Block
 	subs      []chan *common.Block
-	db        *state.VersionedDB
+	db        *state.VersionedDB // own world state; nil when an external one (db1) is used
 	parser    blocks.BlockParser
 	validator *blocks.MVCCValidator
 }
@@ -120,10 +122,12 @@ func makeBlock(blockNum uint64, envs []*common.Envelope) *common.Block {
 	}
 }
 
-// commit adds a block and applies the writes.
+// commit adds a block and applies the writes to our own world state, if any.
 func (l *ledger) commit(ctx context.Context, bl blocks.Block, fbl *common.Block) error {
-	if err := l.db.UpdateWorldState(ctx, bl); err != nil {
-		return err
+	if l.db != nil {
+		if err := l.db.UpdateWorldState(ctx, bl); err != nil {
+			return err
+		}
 	}
 
 	l.mu.Lock()
@@ -140,6 +144,22 @@ func (l *ledger) commit(ctx context.Context, bl blocks.Block, fbl *common.Block)
 		default:
 		}
 	}
+	return nil
+}
+
+// truncate drops every block after num, so the next block takes number num+1.
+// Only allowed when world state is external (db == nil): its owner rewinds it,
+// as must any other subscriber.
+func (l *ledger) truncate(num uint64) error {
+	if l.db != nil {
+		return errors.New("revert requires an external world state (db1)")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if num >= uint64(len(l.blocks)) {
+		return fmt.Errorf("cannot revert to block %d: height is %d", num, len(l.blocks))
+	}
+	l.blocks = l.blocks[:num+1]
 	return nil
 }
 
@@ -176,5 +196,7 @@ func (l *ledger) close() {
 		close(ch)
 	}
 	l.subs = nil
-	l.db.Close() //nolint:errcheck,gosec // Best-effort cleanup of the in-memory test ledger.
+	if l.db != nil {
+		l.db.Close() //nolint:errcheck,gosec // Best-effort cleanup of the in-memory test ledger.
+	}
 }

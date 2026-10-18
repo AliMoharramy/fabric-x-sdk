@@ -30,11 +30,12 @@ type Config struct {
 
 func newTestOrderer(l *ledger, cfg Config) *testOrderer {
 	o := &testOrderer{
-		ledger: l,
-		config: cfg,
-		inCh:   make(chan *common.Envelope, 64),
-		cutCh:  make(chan chan error),
-		stopCh: make(chan struct{}),
+		ledger:   l,
+		config:   cfg,
+		inCh:     make(chan *common.Envelope, 64),
+		cutCh:    make(chan chan error),
+		revertCh: make(chan revertReq),
+		stopCh:   make(chan struct{}),
 	}
 
 	go o.batchingLoop()
@@ -45,11 +46,18 @@ func newTestOrderer(l *ledger, cfg Config) *testOrderer {
 // testOrderer receives transaction envelopes and cuts blocks.
 // Contrary to a normal orderer, it does MVCC validation in place.
 type testOrderer struct {
-	ledger *ledger
-	inCh   chan *common.Envelope
-	cutCh  chan chan error
-	config Config
-	stopCh chan struct{}
+	ledger   *ledger
+	inCh     chan *common.Envelope
+	cutCh    chan chan error
+	revertCh chan revertReq
+	config   Config
+	stopCh   chan struct{}
+}
+
+// revertReq asks batchingLoop to truncate the chain to block num.
+type revertReq struct {
+	num   uint64
+	reply chan error
 }
 
 // stop signals batchingLoop to exit.
@@ -92,6 +100,26 @@ func (o *testOrderer) cutBlock(ctx context.Context) error {
 
 	select {
 	case err := <-reply:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// revert truncates the chain so num is the last block; the next block cut takes
+// number num+1. Like cutBlock, it is serialized with transaction processing.
+// Transactions still waiting in the current batch are dropped.
+func (o *testOrderer) revert(ctx context.Context, num uint64) error {
+	req := revertReq{num: num, reply: make(chan error, 1)}
+
+	select {
+	case o.revertCh <- req:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case err := <-req.reply:
 		return err
 	case <-ctx.Done():
 		return ctx.Err()
@@ -150,6 +178,14 @@ func (o *testOrderer) batchingLoop() {
 
 		case reply := <-o.cutCh:
 			reply <- o.ledger.process(context.Background(), nil)
+
+		case req := <-o.revertCh:
+			batch = nil
+			if timer != nil {
+				timer.Stop()
+				timer = nil
+			}
+			req.reply <- o.ledger.truncate(req.num)
 
 		case <-o.stopCh:
 			return
