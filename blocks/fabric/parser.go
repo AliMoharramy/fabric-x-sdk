@@ -53,6 +53,26 @@ func (p BlockParser) Parse(b *common.Block) (blocks.Block, error) {
 			continue
 		}
 
+		pl := &common.Payload{}
+		if err := proto.Unmarshal(env.Payload, pl); err != nil {
+			p.log.Warnf("malformed tx [%d:%d]: payload: %s", block.Number, txNum, err.Error())
+			continue
+		}
+		if pl.Header == nil {
+			p.log.Warnf("malformed tx [%d:%d]: payload has no header", block.Number, txNum)
+			continue
+		}
+		chdr := &common.ChannelHeader{}
+		if err := proto.Unmarshal(pl.Header.ChannelHeader, chdr); err != nil {
+			p.log.Warnf("malformed tx [%d:%d]: channel header: %s", block.Number, txNum, err.Error())
+			continue
+		}
+		if chdr.Type == int32(common.HeaderType_CONFIG) {
+			block.ConfigEnvelope = env
+			p.log.Infof("CONFIG envelope [%d:%d]", block.Number, txNum)
+			continue
+		}
+
 		tx, err := p.ParseTx(env)
 		if err != nil {
 			p.log.Warnf("malformed tx [%d:%d]: %s", block.Number, txNum, err.Error())

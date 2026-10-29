@@ -9,6 +9,8 @@ SPDX-License-Identifier: Apache-2.0
 // handlers.
 package blocks
 
+import "github.com/hyperledger/fabric-protos-go-apiv2/common"
+
 // ReadWriteSet is the outcome of an optimistically executed transaction.
 type ReadWriteSet struct {
 	Reads  []KVRead
@@ -64,6 +66,9 @@ type Block struct {
 	// in the Transactions slice is not guaranteed to be the same as in
 	// the actual block: use the tx.Number field for that.
 	Transactions []Transaction
+	// ConfigEnvelope is the raw outer CONFIG envelope, or nil for blocks without one.
+	// Consumers decode its configuration payload and should treat it as read-only.
+	ConfigEnvelope *common.Envelope
 }
 
 // Transaction is a parsed endorser transaction from a block. Both valid and invalid

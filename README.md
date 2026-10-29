@@ -71,6 +71,12 @@ All three can be used independently and composed in the same application. `Notif
 
 For example, if you were building a block explorer, you would take the `network.Synchronizer`, load it with an `identity.Signer` and point to the committer sidecar. With help of the `blocks.Processor`, the `fabric(x).Parser` and a custom handler, you extract the information you want to store from the blocks that are coming in through the Synchronizer. Then you build your application around it.
 
+Block handlers can detect channel configuration blocks with `block.ConfigEnvelope != nil`.
+Both parsers expose the raw outer CONFIG envelope, including genesis, separately from
+application `Transactions`; consumers decode its configuration payload as needed.
+Treat the envelope as read-only and handle repeated delivery, since genesis can be replayed
+after a synchronizer reconnect.
+
 If you were building a chaincode endorser, you would use the same elements, as well as the
 `endorsement.ProposalBuilder`, world state storage like the provided in `state.VersionedDB` with a
 `state.SimulationStore` on top. You might choose to expose the classic Fabric ProcessProposal API.

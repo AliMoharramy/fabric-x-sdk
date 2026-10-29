@@ -121,9 +121,8 @@ func TestGenesisBlock_DeliveredFromZero(t *testing.T) {
 	}
 }
 
-// TestGenesisBlock_NotReportedAsTransaction checks the config block stays out of the
-// world state and the notifier: both parsers drop non-MESSAGE envelopes, so genesis
-// must not surface as a transaction.
+// TestGenesisBlock_NotReportedAsTransaction checks that genesis is exposed as a
+// CONFIG envelope, separately from application transactions and world-state writes.
 func TestGenesisBlock_NotReportedAsTransaction(t *testing.T) {
 	for _, networkType := range networkTypes {
 		t.Run(networkType, func(t *testing.T) {
@@ -139,6 +138,13 @@ func TestGenesisBlock_NotReportedAsTransaction(t *testing.T) {
 			}
 			if len(bl.Transactions) != 0 {
 				t.Errorf("genesis parsed to %d transactions, want 0", len(bl.Transactions))
+			}
+			env := &common.Envelope{}
+			if err := proto.Unmarshal(genesis.Data.Data[0], env); err != nil {
+				t.Fatalf("unmarshal genesis envelope: %v", err)
+			}
+			if !proto.Equal(bl.ConfigEnvelope, env) {
+				t.Errorf("ConfigEnvelope = %v, want genesis envelope %v", bl.ConfigEnvelope, env)
 			}
 
 			// BlockNumber reports 0 for a fresh store, so the synchronizer starts at 0
